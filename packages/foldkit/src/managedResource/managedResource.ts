@@ -94,10 +94,13 @@ export type ManagedResourceConfig<Model, Message> = {
   readonly onAcquireError: (error: unknown) => Message
 }
 
-/** A record of named Managed Resource configurations, keyed by resource name. */
+/** A record of named Managed Resource configurations, keyed by resource name.
+ *  Each configuration must come from `ManagedResource.make`, directly or
+ *  through `lift` or `aggregate`, because `make` installs the ManagedResource
+ *  runtime. */
 export type ManagedResources<Model, Message, Services = never> = Record<
   string,
-  ManagedResourceConfig<Model, Message>
+  ManagedResourceConfig<Model, Message> & EntryBrand<Model, Message>
 > & {
   readonly __managedResourceServices?: Services
 }

@@ -95,13 +95,14 @@ describe('feature runtime registration', () => {
   })
 
   it('throws when ManagedResources were not created with ManagedResource.make', () => {
-    expect(() =>
-      makeEngineApplication({
-        managedResources: {
-          engine: { schema: EngineRequirements, ...engineCallbacks },
-        },
-      }),
-    ).toThrow(/ManagedResource runtime is not installed.*ManagedResource\.make/)
+    /* eslint-disable-next-line @typescript-eslint/consistent-type-assertions */
+    const managedResources = {
+      engine: { schema: EngineRequirements, ...engineCallbacks },
+    } as unknown as ManagedResource.ManagedResources<Model, Message>
+
+    expect(() => makeEngineApplication({ managedResources })).toThrow(
+      /ManagedResource runtime is not installed.*ManagedResource\.make/,
+    )
   })
 
   it('creates the application when Subscriptions come from Subscription.make', () => {

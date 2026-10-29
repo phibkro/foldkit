@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from 'effect'
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
+  type ManagedResources,
   type ServiceOf,
   type ServicesOf,
   aggregate,
@@ -290,4 +291,39 @@ describe('aggregate', () => {
       incompatibleModelManagedResources,
     )
   }
+})
+
+describe('ManagedResources', () => {
+  it('accepts records built by make, lift, and aggregate', () => {
+    expectTypeOf(childManagedResources).toExtend<
+      ManagedResources<ChildModel, ChildMessage>
+    >()
+    expectTypeOf(liftedManagedResources).toExtend<
+      ManagedResources<ParentModel, ParentMessage>
+    >()
+    expectTypeOf(
+      aggregate(parentLocalManagedResources, liftedManagedResources),
+    ).toExtend<ManagedResources<ParentModel, ParentMessage>>()
+  })
+
+  it('rejects a configuration built without a constructor', () => {
+    const handBuiltManagedResources = {
+      session: {
+        schema: sessionSchema,
+        resource: SessionResource,
+        modelToMaybeRequirements: (model: ChildModel) =>
+          Option.map(model.maybeToken, token => ({ token })),
+        acquire: ({ token }: Readonly<{ token: string }>) =>
+          Effect.succeed({ token }),
+        release: () => Effect.void,
+        onAcquired: () => childMessage('AcquiredSession'),
+        onReleased: () => childMessage('ReleasedSession'),
+        onAcquireError: () => childMessage('FailedSession'),
+      },
+    }
+
+    expectTypeOf(handBuiltManagedResources).not.toExtend<
+      ManagedResources<ChildModel, ChildMessage>
+    >()
+  })
 })
