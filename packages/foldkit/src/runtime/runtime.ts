@@ -8,6 +8,7 @@ import {
   Option,
   Predicate,
   PubSub,
+  Record,
   Schema,
   pipe,
 } from 'effect'
@@ -34,7 +35,10 @@ import { deepFreeze } from './deepFreeze.js'
 import type { DevToolsConfig } from './devToolsConfig.js'
 import { makeDevToolsIntegration } from './devToolsIntegration.js'
 import { createDuplicateIdScanner } from './duplicateIdScanner.js'
-import { featureRegistry } from './featureRegistry.js'
+import {
+  assertFeatureRuntimesRegistered,
+  featureRegistry,
+} from './featureRegistry.js'
 import {
   type HostConnector,
   type PortChannelsBundle,
@@ -71,7 +75,7 @@ import { type Visibility, isVisible } from './visibility.js'
 
 type AnyCommand<T, E = never, R = never> = {
   readonly name: string
-  readonly args?: Record<string, unknown>
+  readonly args?: globalThis.Record<string, unknown>
   readonly effect: Effect.Effect<T, E, R>
 }
 
@@ -311,6 +315,13 @@ export const makeRuntime = <
   P,
   Kind
 >): MakeRuntimeReturn<P, Flags, Resources, Kind> => {
+  assertFeatureRuntimesRegistered({
+    hasSubscriptions: subscriptions !== undefined,
+    hasManagedResources:
+      managedResources !== undefined &&
+      !Record.isEmptyReadonlyRecord(managedResources),
+  })
+
   const isSlowVisible = (show: Visibility): boolean =>
     isVisible(show, !!import.meta.hot)
 
@@ -581,7 +592,7 @@ export const makeRuntime = <
         const assignCommandIds = <
           CommandType extends Readonly<{
             name: string
-            args?: Record<string, unknown>
+            args?: globalThis.Record<string, unknown>
           }>,
         >(
           commands: ReadonlyArray<CommandType>,
@@ -805,16 +816,10 @@ export const makeRuntime = <
           yield* recordInit(initModel, initCommandInvocations)
         }
 
-        if (subscriptions) {
-          const forkSubscriptionFibers = featureRegistry.forkSubscriptionFibers
-          if (forkSubscriptionFibers === undefined) {
-            return yield* Effect.die(
-              new Error(
-                'Subscriptions must be created with Subscription.make, which installs the Subscription runtime.',
-              ),
-            )
-          }
+        const { forkSubscriptionFibers, forkManagedResourceFibers } =
+          featureRegistry
 
+        if (subscriptions && forkSubscriptionFibers !== undefined) {
           yield* forkSubscriptionFibers({
             subscriptions,
             initModel,
@@ -827,8 +832,6 @@ export const makeRuntime = <
           })
         }
 
-        const forkManagedResourceFibers =
-          featureRegistry.forkManagedResourceFibers
         if (forkManagedResourceFibers !== undefined) {
           yield* forkManagedResourceFibers({
             managedResourceRefs,
@@ -838,12 +841,6 @@ export const makeRuntime = <
             enqueueMessageEffect,
             crashWith,
           })
-        } else if (Array.isReadonlyArrayNonEmpty(managedResourceRefs)) {
-          return yield* Effect.die(
-            new Error(
-              'ManagedResources must be created with ManagedResource.make, which installs the ManagedResource runtime.',
-            ),
-          )
         }
 
         // NOTE: registered before the boot buffer drains, so an interrupt
