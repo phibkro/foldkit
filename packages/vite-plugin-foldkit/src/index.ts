@@ -81,6 +81,12 @@ export {
 } from './build.js'
 export { type FoldkitSsrOptions, foldkitSsr } from './ssr.js'
 export {
+  type SubmodelCatalogOptions,
+  generateSubmodelCatalog,
+  writeSubmodelCatalog,
+  foldkitSubmodels,
+} from './submodels.js'
+export {
   type ViewIdentityTransformResult,
   foldkitViewIdentity,
   transformViewIdentity,

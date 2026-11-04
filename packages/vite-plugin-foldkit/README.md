@@ -224,3 +224,61 @@ See the [DevTools MCP documentation](https://foldkit.dev/ai/mcp) for setup, the 
 ## License
 
 MIT
+
+## Submodel catalogs
+
+`foldkitSubmodels` checks a generated catalog of complete lazy Submodels. It works alongside `foldkit()`.
+
+```ts
+import { resolve } from 'node:path'
+import {
+  foldkit,
+  foldkitSubmodels,
+  writeSubmodelCatalog,
+} from '@foldkit/vite-plugin'
+
+const catalog = {
+  directory: resolve('src/page'),
+  catalog: resolve('src/page/catalog.generated.ts'),
+}
+
+// Run this from a separate generation script before the production build.
+writeSubmodelCatalog(catalog)
+
+// vite.config.ts
+plugins: [foldkit(), foldkitSubmodels(catalog)]
+```
+
+The generator finds each `*.contract.ts` file recursively. Each file exports `contract`. Its adjacent `implementation.ts` exports `implementation`. The generated catalog contains typed literal imports and a `createCatalog({ buildId })` factory.
+
+`factoryModule` and `factoryExport` select an application adapter. Their defaults are `foldkit/submodel` and `lazy`. `implementationFile`, `implementationExport`, and `contractSuffix` select the file convention.
+
+The compiler refuses a stale catalog. Generation therefore runs as an explicit command without build-time changes to tracked source files. New route contracts require regeneration.
+
+Import the identity in the client entry:
+
+```ts
+import buildId from 'virtual:foldkit-submodels/build-id'
+import { createCatalog } from './page/catalog.generated'
+
+const modules = createCatalog({ buildId })
+```
+
+Declare this virtual module in the application TypeScript declarations:
+
+```ts
+declare module 'virtual:foldkit-submodels/build-id' {
+  const buildId: string
+  export default buildId
+}
+```
+
+Production identities derive from the input module graph. Development identities change after route or transitive implementation edits. An application must reject preserved Models from another identity before restoration.
+
+The emitted `foldkit-submodels.json` maps each contract and implementation to its chunks. The compiler checks the emitted startup closure and static module imports. Its diagnostics identify contract-to-execution paths and cross-route execution paths.
+
+Execution modules use the configured implementation filename or names such as `view.ts`, `update.ts`, `command.ts`, and `subscription.ts`. Arbitrary filenames can contain execution too. These checks supplement explicit boundaries and bundle inspection.
+
+Shared execution belongs outside route implementation directories. Cycles within one implementation are legal. Imports into another route implementation produce a diagnostic. Separate server and client builds require application-owned build identity coordination.
+
+See [complete lazy Submodels](../foldkit/SUBMODELS.md) for parent composition, subscriptions, preparation, and replay.

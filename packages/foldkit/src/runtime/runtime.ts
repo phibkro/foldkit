@@ -12,6 +12,7 @@ import {
   pipe,
 } from 'effect'
 
+import type { Command } from '../command/index.js'
 import { DialogRuntime } from '../dom/dialogRuntime.js'
 import { releaseDialogResources } from '../dom/dom.js'
 import {
@@ -34,6 +35,7 @@ import { deepFreeze } from './deepFreeze.js'
 import type { DevToolsConfig } from './devToolsConfig.js'
 import { makeDevToolsIntegration } from './devToolsIntegration.js'
 import { createDuplicateIdScanner } from './duplicateIdScanner.js'
+import { forkDynamicSubscriptionFibers } from './dynamicSubscriptionFibers.js'
 import {
   type HostConnector,
   type PortChannelsBundle,
@@ -115,6 +117,18 @@ export type RuntimeConfig<
     Message,
     Resources | ManagedResourceServices
   >
+  /** Reconstructs interrupted Commands after successful Model restoration. Fresh init retains its own Commands. */
+  resumeModel?: (
+    model: Model,
+  ) => ReadonlyArray<
+    Command<Message, never, Resources | ManagedResourceServices>
+  >
+  /** Prepares code referenced by an initial or restored Model before render, replay, or subscriptions. */
+  prepareModel?: (model: Model) => Effect.Effect<void, never, Resources>
+  /** Selects the active prepared Submodel's subscriptions. Entries retain their identity while active. */
+  dynamicSubscriptions?: (
+    model: Model,
+  ) => Subscriptions<Model, Message, Resources | ManagedResourceServices>
   container: HTMLElement
   /**
    * Present when `makeApplication` found a server-rendered root stamped with
@@ -292,6 +306,9 @@ export const makeRuntime = <
   view,
   manageDocument,
   subscriptions,
+  dynamicSubscriptions,
+  prepareModel,
+  resumeModel,
   container,
   hydration,
   routing: routingConfig,
@@ -472,15 +489,24 @@ export const makeRuntime = <
           flags => init(flags, Option.getOrUndefined(currentUrl)),
         )
 
-        const init_ = yield* preservedModel !== undefined
-          ? Exit.match(decodePreservedModel(preservedModel), {
-              onFailure: () => runInit,
-              onSuccess: restoredModel =>
-                Effect.succeed<InitResult>({ model: restoredModel }),
-            })
-          : runInit
+        const restored =
+          preservedModel === undefined
+            ? Option.none<Model>()
+            : Exit.match(decodePreservedModel(preservedModel), {
+                onFailure: () => Option.none<Model>(),
+                onSuccess: Option.some,
+              })
+        const init_ = yield* Option.match(restored, {
+          onNone: () => runInit,
+          onSome: model => Effect.succeed<InitResult>({ model }),
+        })
         const initModelRaw = init_.model
-        const initCommands = init_.commands ?? []
+        if (prepareModel) {
+          yield* provideAllResources(prepareModel(initModelRaw))
+        }
+        const initCommands = Option.isSome(restored)
+          ? (resumeModel?.(initModelRaw) ?? [])
+          : (init_.commands ?? [])
 
         // NOTE: keep `encodePreservedModel` off the dispatch hot path. It walks
         // the entire Model graph (O(modelSize) per call) and blocks input
@@ -813,6 +839,19 @@ export const makeRuntime = <
             modelPubSub,
             runtimeScope,
             maybeSlowSubscriptionDependencies,
+            enqueueMessageEffect,
+            provideAllResources,
+            crashWith,
+          })
+        }
+
+        if (dynamicSubscriptions) {
+          yield* forkDynamicSubscriptionFibers({
+            select: dynamicSubscriptions,
+            staticSubscriptions: subscriptions ?? {},
+            initModel,
+            modelPubSub,
+            runtimeScope,
             enqueueMessageEffect,
             provideAllResources,
             crashWith,
