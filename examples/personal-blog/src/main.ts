@@ -1,6 +1,6 @@
 import { clsx } from 'clsx'
 import { Effect, Option, Schema } from 'effect'
-import { Command, Runtime, Update } from 'foldkit'
+import { Command, Runtime, Submodel, Update } from 'foldkit'
 import { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest, load, pushUrl } from 'foldkit/navigation'
@@ -40,7 +40,7 @@ export type Message = typeof Message.Type
 
 export const init: Runtime.RoutingApplicationInit<Model, Message> = (
   url: Url,
-) => ({ model: { route: Route.urlToAppRoute(url), counter: Counter.init } })
+) => counter.init(counter => ({ route: Route.urlToAppRoute(url), counter }))
 
 // COMMAND
 
@@ -62,8 +62,8 @@ const LoadExternal = Command.define('LoadExternal', {
 
 type UpdateReturn = Update.Return<Model, Message>
 
-const foldCounter = Update.foldChild({
-  update: Counter.update,
+const counter = Submodel.bind(Counter.definition, {
+  name: 'counter',
   read: (model: Model) => Option.some(model.counter),
   write: (model, nextCounter) =>
     modifyFields(model, { counter: () => nextCounter }),
@@ -89,7 +89,7 @@ export const update = (model: Model, message: Message) =>
       return { model: modifyFields(model, { route: () => nextRoute }) }
     },
 
-    GotCounterMessage: ({ message }) => foldCounter(model, message),
+    GotCounterMessage: ({ message }) => counter.update(model, message),
     CompletedNavigateInternal: () => ({ model }),
     CompletedLoadExternal: () => ({ model }),
   })
@@ -107,12 +107,7 @@ const islandViews = (model: Model, h: HtmlBuilder<Message>): Markdown.Islands =>
         ],
         [
           h.span([h.Class('text-sm text-stone-500')], [label ?? 'Counter']),
-          h.submodel({
-            slotId: `counter-${occurrenceIndex}`,
-            model: model.counter,
-            view: Counter.view,
-            toParentMessage: message => Message.GotCounterMessage({ message }),
-          }),
+          counter.view(model, h, { slotId: `counter-${occurrenceIndex}` }),
         ],
       ),
 

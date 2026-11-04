@@ -1,4 +1,24 @@
-# Complete lazy Submodels
+# Submodels
+
+Use `Submodel.define({ Model, Message, init, update, view, subscriptions })` to define an ordinary child state machine. The view and Subscriptions are optional. A view declared inside `define` receives the child Message type without a separate `defineView` call. Initialization and update are synchronous and preserve their argument lists.
+
+Use `Submodel.bind(child, { name, read, write, toParentMessage, foldOutMessage })` to declare its parent relationship once. `foldOutMessage` is required only when the child can emit OutMessages. The parent owns its Model, child presence, and wrapper Messages.
+
+- `binding.init(toParentModel, ...args)` constructs the parent from the initialized child and lifts its Commands and OutMessages.
+- `binding.enter(parentModel, ...args)` initializes a child inside an existing parent through `write`.
+- `binding.update(parentModel, childMessage, ...args)` delegates to the child, writes its result, and lifts Commands and OutMessages.
+- `binding.view(parentModel, h, options)` renders through `h.submodel`. The binding name supplies the default slot. Pass `slotId` for another render position and `viewInputs` when the child requires them.
+- `binding.subscriptions(parentModel)` selects and lifts child Subscriptions for the runtime's `dynamicSubscriptions` option. Combine bindings with `Subscription.aggregate`. Binding names namespace entries; distinct child relationships need distinct names. Selected records must be immutable and retain their identity while active.
+
+Return `None` from `read` while the child is absent. The binding skips its update, view, Subscriptions, and restoration hooks. Bindings retain lifted code and Subscription adapters, never parent Models.
+
+## Lazy implementations
+
+Lazy hosts implement the same definition interface and can be passed directly to `Submodel.bind`. Wire `binding.prepareModel` and `binding.resumeModel` to the runtime's matching options. The lazy host owns preparation state; ordinary Submodels need no loading host.
+
+A definition's optional `prepareModel` prepares code without changing its Model. Its optional `resumeModel` returns Commands directly. Recovery changes the Model through the Messages produced by those Commands. Lazy hosts expose these hooks alongside their `prepare` and `resume` entry points.
+
+`Submodel.eager` is an explicit preparation host for an already imported implementation. It follows the same admission protocol as `Submodel.lazy`. Use `Submodel.define` for ordinary synchronous composition.
 
 `Submodel.contract` defines the eager schemas for a child. `Submodel.implement` checks its executable module. `Submodel.lazy` creates an application-owned host for that module.
 

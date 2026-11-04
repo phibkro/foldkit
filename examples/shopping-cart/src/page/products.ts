@@ -258,3 +258,11 @@ export const view = Submodel.defineView<Model, Message, ViewInputs>(
     )
   },
 )
+
+export const definition = Submodel.define({
+  Model,
+  Message,
+  init: (products: ReadonlyArray<Item.Item>) => ({ model: init(products) }),
+  update,
+  view,
+})

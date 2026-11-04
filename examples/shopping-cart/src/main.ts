@@ -1,5 +1,5 @@
 import { Effect, Match, Option, Schema } from 'effect'
-import { Command, Runtime, Update } from 'foldkit'
+import { Command, Runtime, Submodel, Update } from 'foldkit'
 import { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest, load, pushUrl } from 'foldkit/navigation'
@@ -51,15 +51,16 @@ export type Message = typeof Message.Type
 export const init: Runtime.RoutingApplicationInit<Model, Message> = (
   url: Url,
 ) => {
-  return {
-    model: {
+  return productsPage.init(
+    productsPage => ({
       route: urlToAppRoute(url),
       cart: [],
       deliveryInstructions: '',
       orderPlaced: false,
-      productsPage: Products.init(products),
-    },
-  }
+      productsPage,
+    }),
+    products,
+  )
 }
 
 // COMMAND
@@ -100,8 +101,8 @@ const foldProductsOutMessage = Products.OutMessage.match<
     }),
 })
 
-const foldProducts = Update.foldChild({
-  update: Products.update,
+const productsPage = Submodel.bind(Products.definition, {
+  name: 'products',
   read: (model: Model) => Option.some(model.productsPage),
   write: (model, nextProductsPage) =>
     modifyFields(model, { productsPage: () => nextProductsPage }),
@@ -133,7 +134,7 @@ export const update = (model: Model, message: Message) =>
       }),
     }),
 
-    GotProductsMessage: ({ message }) => foldProducts(model, message),
+    GotProductsMessage: ({ message }) => productsPage.update(model, message),
 
     ClickedIncrementQuantity: ({ itemId }) => ({
       model: modifyFields(model, {
@@ -233,13 +234,7 @@ const navigationView = (
 }
 
 const productsView = (model: Model, h: HtmlBuilder<Message>): Html =>
-  h.submodel({
-    slotId: 'products',
-    model: model.productsPage,
-    view: Products.view,
-    viewInputs: { cart: model.cart },
-    toParentMessage: message => Message.GotProductsMessage({ message }),
-  })
+  productsPage.view(model, h, { viewInputs: { cart: model.cart } })
 
 const cartView = (model: Model, h: HtmlBuilder<Message>): Html =>
   CartPage.view(model.cart, h)
