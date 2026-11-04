@@ -241,7 +241,7 @@ describe('complete Submodel host', () => {
     const ready = await finish(first, first.enter({ initial: 7 }, 1))
     const encoded = Schema.encodeSync(first.Model)(ready.model)
     const fresh = makeHost()
-    const restored = Schema.decodeUnknownSync(fresh.Model)(encoded)
+    const restored = Schema.decodeSync(fresh.Model)(encoded)
     const message = fresh.Message.GotChildMessage({
       instance: 1,
       buildId,
