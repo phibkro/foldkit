@@ -3,7 +3,7 @@ import { Command, Dom, Runtime, Subscription, Update } from 'foldkit'
 import { Document, Html, HtmlBuilder } from 'foldkit/html'
 import { defineMessageUnion } from 'foldkit/message'
 import { UrlRequest, load, pushUrl } from 'foldkit/navigation'
-import { Transition } from 'foldkit/route'
+import { Transition, catalog, register } from 'foldkit/route'
 import { modifyFields } from 'foldkit/struct'
 import { Url, toString as urlToString } from 'foldkit/url'
 
@@ -14,6 +14,7 @@ import {
   findEntry,
   formatFileSize,
 } from './fileTree'
+import { NestedPage } from './lazyPage'
 import { People } from './page'
 import {
   AppRoute,
@@ -32,6 +33,8 @@ export { AppRoute } from './route'
 export const Model = Schema.Struct({
   route: AppRoute,
   peoplePage: People.Model,
+  maybeNestedPage: Schema.Option(NestedPage.Model),
+  nestedInstance: Schema.Number,
 })
 
 export type Model = typeof Model.Type
@@ -48,6 +51,9 @@ export const Message = defineMessageUnion({
   ChangedUrl: { url: Url },
   EnteredNavigationShortcut: { shortcut: NavigationShortcut },
   GotPeopleMessage: { message: People.Message },
+  GotNestedMessage: { message: NestedPage.Message },
+  FocusedNestedLink: {},
+  CompletedPrefetchNested: {},
 })
 
 export type Message = typeof Message.Type
@@ -64,10 +70,20 @@ export const init: Runtime.RoutingApplicationInit<Model, Message> = (
     Match.orElse(() => AppRoute.People({ searchText: Option.none() })),
   )
 
-  return Update.foldChildInit(People.init(initialPeopleRoute), {
-    toParentModel: peoplePage => ({ route, peoplePage }),
+  const peopleInit = Update.foldChildInit(People.init(initialPeopleRoute), {
+    toParentModel: peoplePage =>
+      Model.make({
+        route,
+        peoplePage,
+        maybeNestedPage: Option.none(),
+        nestedInstance: 0,
+      }),
     toParentMessage: message => Message.GotPeopleMessage({ message }),
   })
+  return Update.combine(peopleInit.model, [
+    stepModel => ({ ...peopleInit, model: stepModel }),
+    nestedRoute.transition(Transition.coldLoad(route)),
+  ])
 }
 
 // COMMAND
@@ -84,6 +100,14 @@ const LoadExternal = Command.define('LoadExternal', {
   messages: [Message.CompletedLoadExternal],
   execute: ({ href }) =>
     load(href).pipe(Effect.as(Message.CompletedLoadExternal())),
+})
+
+const PrefetchNested = Command.define('PrefetchNested', {
+  messages: [Message.CompletedPrefetchNested],
+  execute: NestedPage.prefetch().pipe(
+    Effect.catch(() => Effect.void),
+    Effect.as(Message.CompletedPrefetchNested()),
+  ),
 })
 
 // UPDATE
@@ -119,7 +143,61 @@ const setRoute =
   (nextRoute: AppRoute): Step =>
   model => ({ model: modifyFields(model, { route: () => nextRoute }) })
 
-const keepModel: Step = model => ({ model })
+const registerRoute = register<Model, Message>()
+const nestedRoute = registerRoute(nestedRouter, {
+  tag: 'Nested',
+  entered: () => model => {
+    const nextInstance = model.nestedInstance + 1
+    return Update.foldChildInit(
+      NestedPage.enter(
+        {},
+        nextInstance,
+        Option.getOrUndefined(model.maybeNestedPage),
+      ),
+      {
+        toParentModel: nestedPage =>
+          modifyFields(model, {
+            maybeNestedPage: () => Option.some(nestedPage),
+            nestedInstance: () => nextInstance,
+          }),
+        toParentMessage: message => Message.GotNestedMessage({ message }),
+      },
+    )
+  },
+  prefetch: () => [PrefetchNested()],
+})
+const peopleRoute = registerRoute(peopleRouter, {
+  tag: 'People',
+  entered: route => foldPeopleRouteChanged(route),
+  stayed: ({ nextRoute }) => foldPeopleRouteChanged(nextRoute),
+})
+const routeCatalog = catalog(nestedRoute, peopleRoute)
+
+const foldNested = Update.foldChild({
+  update: NestedPage.update,
+  read: (model: Model) =>
+    model.route._tag === 'Nested' ? model.maybeNestedPage : Option.none(),
+  write: (model, nextNestedPage) =>
+    modifyFields(model, { maybeNestedPage: () => Option.some(nextNestedPage) }),
+  toParentMessage: message => Message.GotNestedMessage({ message }),
+})
+
+export const prepareModel = (model: Model) =>
+  Option.match(model.maybeNestedPage, {
+    onNone: () => Effect.void,
+    onSome: NestedPage.prepare,
+  })
+
+export const resumeModel = (model: Model) =>
+  model.route._tag === 'Nested'
+    ? Option.match(model.maybeNestedPage, {
+        onNone: () => [],
+        onSome: state =>
+          Command.mapMessages(NestedPage.resume(state).commands, message =>
+            Message.GotNestedMessage({ message }),
+          ),
+      })
+    : []
 
 export const update = (model: Model, message: Message) =>
   Message.match<UpdateReturn>(message, {
@@ -142,17 +220,10 @@ export const update = (model: Model, message: Message) =>
       const nextRoute = urlToAppRoute(url)
 
       const transition = Transition.make(model.route, nextRoute)
-      const informPeopleRoute = Transition.matchOrElse<Step>()(
-        transition,
-        'People',
-        {
-          Entered: peopleRoute => foldPeopleRouteChanged(peopleRoute),
-          Stayed: ({ nextRoute }) => foldPeopleRouteChanged(nextRoute),
-        },
-        () => keepModel,
-      )
-
-      return Update.combine(model, [setRoute(nextRoute), informPeopleRoute])
+      return Update.combine(model, [
+        setRoute(nextRoute),
+        routeCatalog.transition(transition),
+      ])
     },
 
     EnteredNavigationShortcut: ({ shortcut }) => {
@@ -162,6 +233,12 @@ export const update = (model: Model, message: Message) =>
     },
 
     GotPeopleMessage: ({ message }) => foldPeople(model, message),
+    GotNestedMessage: ({ message }) => foldNested(model, message),
+    FocusedNestedLink: () => ({
+      model,
+      commands: routeCatalog.prefetch(AppRoute.Nested()),
+    }),
+    CompletedPrefetchNested: () => ({ model }),
   })
 
 // SUBSCRIPTION
@@ -258,6 +335,7 @@ const navigationView = (
               h.a(
                 [
                   h.Href(nestedRouter()),
+                  h.OnFocus(Message.FocusedNestedLink()),
                   h.Class(navLinkClassName(currentRoute._tag === 'Nested')),
                 ],
                 ['Nested'],
@@ -285,21 +363,6 @@ const homeView = (h: HtmlBuilder<Message>): Html =>
         ],
       ),
       h.p([h.Class('text-gray-600')]),
-    ],
-  )
-
-const nestedView = (h: HtmlBuilder<Message>): Html =>
-  h.div(
-    [h.Class('max-w-4xl mx-auto px-4')],
-    [
-      h.h1(
-        [h.Class('text-4xl font-bold text-gray-800 mb-6')],
-        ['Very Nested Route!'],
-      ),
-      h.p(
-        [h.Class('text-lg text-gray-600')],
-        ['You found the deeply nested route at /nested/route/is/very/nested'],
-      ),
     ],
   )
 
@@ -584,7 +647,18 @@ const routeTitle = (route: Model['route']): string =>
 export const view = (model: Model, h: HtmlBuilder<Message>): Document => {
   const routeContent = AppRoute.match(model.route, {
     Home: () => homeView(h),
-    Nested: () => nestedView(h),
+    Nested: () =>
+      Option.match(model.maybeNestedPage, {
+        onNone: () => h.empty,
+        onSome: nestedPage =>
+          h.submodel({
+            slotId: 'nested',
+            model: nestedPage,
+            view: NestedPage.view,
+            viewInputs: { input: {} },
+            toParentMessage: message => Message.GotNestedMessage({ message }),
+          }),
+      }),
     People: () =>
       h.submodel({
         slotId: 'people',

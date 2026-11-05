@@ -27,3 +27,10 @@ export type {
 } from './index.js'
 
 export * as Transition from './transition.js'
+
+export { register, catalog } from './registration.js'
+export type {
+  RegistrationOptions,
+  Registration,
+  Catalog,
+} from './registration.js'

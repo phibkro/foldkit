@@ -221,3 +221,41 @@ Every helper that takes a tag answers for one named route. When several routes h
 Because a cold load counts as an entry, `init` and the `ChangedUrl` handler share one load-on-entry policy: reloading on `/people` runs the same entry Commands as clicking there from the home page.
 
 The [Route Transition API reference](/api-reference/route-transition) lists every helper with its full signature.
+
+## Lazy routes
+
+A lazy route keeps its URL parser and Schemas in the initial bundle and loads its page implementation through a Command. Route registration connects navigation to the existing lazy Submodel host. The parent owns the active Route, child state, and visit identity. The host owns module preparation, retries, and rejection of stale completions.
+
+The [Routing example](/example-apps/routing) loads its Nested page on entry. Focusing the Nested link prefetches its code. Leaving and returning preserves the counter, while completions from an earlier visit cannot change the active page.
+
+### Define the loading boundary
+
+Put the child Model, Message, Input, and OutMessage Schemas in an eager contract module. Export the executable child from a separate implementation module. Construct a host with `Submodel.lazy` and a literal dynamic import:
+
+::Snippet{name="routingLazyHost" label="Lazy page host"}
+
+The contract and implementation in this snippet are the Nested page modules in the Routing example. The `foldkitSubmodels` Vite plugin supplies the build identity and checks that implementation code stays outside the startup import graph. Its catalog generator can produce these literal imports from explicit contract files. Run the example's `submodels:generate` command after adding a contract.
+
+### Register navigation policy
+
+`Route.register<Model, Message>()` associates a Router with typed `entered`, `stayed`, `exited`, and `prefetch` callbacks. Each navigation callback returns an `Update.Step`. Parsing a URL or building a link never calls these callbacks.
+
+For example, the Nested page uses a parent-owned instance counter. Entry returns the host's Loading Model and preparation Command. Passing its parked state lets the child revive its previous counter after preparation:
+
+::Snippet{name="routingRegisterRoutes" label="Register a lazy page"}
+
+`Route.catalog` accepts one or more registrations. It is a parser, so pass it to `Route.parseUrlWithFallback` or `Route.oneOf`. Each registration also exposes its original URL builder as `registration.router`. Catalog parsing preserves argument order and requires a complete URL match. Duplicate registration tags are rejected.
+
+On cold entry, apply `routes.transition(Route.Transition.coldLoad(route))` to the initial Model. On navigation, record the previous Route, set the next Route, and apply the transition Step. The catalog runs exits before entries and threads each Step's Model changes into the next Step. It returns their Commands for the Runtime to perform.
+
+A same-tag navigation calls `stayed`, including `/people/1` to `/people/2` and query changes. Compare the relevant fields in that callback and choose whether to update the existing child or enter a new instance. An omitted callback leaves the Model unchanged.
+
+### Prefetch and restoration
+
+A registration's optional `prefetch` callback returns Commands. A parent Message handler can return `routes.prefetch(destination)` on focus or hover. Define the Command with `Submodel.lazy`'s `prefetch` Effect and handle download failure there. Prefetch prepares code without initializing or admitting a child Model.
+
+Gate child update and Subscription selection by the active Route. Allocate a fresh instance number when replacing a child so delayed Messages cannot reach its replacement. Keep parked state in the parent Model when it should survive navigation. Use the host's `prepare` operation from Runtime's `prepareModel` hook for restored Ready state, and map its `resume` Commands from `resumeModel` for restored active Loading state. The Routing example shows this wiring.
+
+### Choose a splitting boundary
+
+Route splitting loads a page when navigation needs it. Submodel splitting can also defer a chart, editor, or dialog within an active page. Both use the same lazy host and can coexist. Register an eager child when its code belongs in startup; use `Submodel.lazy` when its implementation should be deferred. Registration does not choose a loading boundary for every Submodel.
