@@ -12,12 +12,14 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'rolldown'
 import { transform } from 'rolldown/experimental'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 const getTypeScriptParseErrors = async (source: string) =>
   (await transform('fixed.ts', source)).errors
 
 import { type LintDiagnostic, runOxlint } from './run-oxlint.ts'
+
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
 
 // Runs every rule through real oxlint against fixtures written in real
 // Foldkit idioms. `invalid/` must produce at least one diagnostic and

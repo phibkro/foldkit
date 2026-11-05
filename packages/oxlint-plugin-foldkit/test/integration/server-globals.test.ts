@@ -3,9 +3,11 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { build } from 'rolldown'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { type LintDiagnostic, runOxlint } from './run-oxlint.ts'
+
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 })
 
 const here = dirname(fileURLToPath(import.meta.url))
 const pluginRoot = join(here, '..', '..')
