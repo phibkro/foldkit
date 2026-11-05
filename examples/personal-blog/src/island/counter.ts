@@ -65,3 +65,11 @@ export const view = Submodel.defineView<Model, Message>((model, h) =>
     ],
   ),
 )
+
+export const definition = Submodel.define({
+  Model,
+  Message,
+  init: () => ({ model: init }),
+  update,
+  view,
+})

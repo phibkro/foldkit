@@ -27,6 +27,28 @@ A Submodel is one station in the restaurant. The station owns its work and inter
 If a section only renders parent state and owns no Messages or update logic, make it a view function. A reusable card that receives a title and content does not need a Submodel.
 :::
 
+## Defining and Binding a Submodel {#definition-and-binding}
+
+Use `Submodel.define` to group a child's schemas, init, and update. Add a view or Subscriptions when the child owns them. A view declared inside `define` receives a builder for the child's Message type. Initialization and update run synchronously.
+
+::Snippet{name="submodelDefinition" label="Define a Counter Submodel"}
+
+Use `Submodel.bind` to declare the parent relationship once. The binding reads and writes the child Model and wraps its Messages. Its init, update, and view reuse that relationship. The parent declares its own Model and wrapper Message.
+
+::Snippet{name="submodelBinding" label="Bind the Counter to its parent"}
+
+`binding.init(toParentModel, ...args)` initializes the child, constructs the parent, and lifts the child's Commands. Use `binding.enter(parentModel, ...args)` to initialize a child inside an existing parent. Both fold any child OutMessage after the parent contains the initialized child.
+
+Return `None` from `read` while a child is absent. The binding then skips its update, view, Subscriptions, and restoration hooks. When the child emits OutMessages, the binding requires `foldOutMessage`. Use the child's exhaustive matcher to return parent update Steps, as described under [surfacing facts](#surfacing-facts).
+
+For Subscriptions, pass `binding.subscriptions` to the runtime's `dynamicSubscriptions` option. Combine several bindings with `Subscription.aggregate`. Each binding caches its lifted entries and namespaces their names. Give sibling bindings distinct names. A view uses the binding name as its default `slotId`; pass `{ slotId }` when rendering the same child in another position. Required view inputs go in `{ viewInputs }`.
+
+Lazy hosts work with `Submodel.bind` through the same interface. Their loading state and preparation Messages belong to the host. Wire `binding.prepareModel` and `binding.resumeModel` to the matching runtime options for code preparation and interrupted restoration. Ordinary synchronous Submodels require neither hook.
+
+A child's optional `resumeModel` returns Commands directly. Its recovery Commands produce Messages that pass through update; restoration does not replace the child Model through this hook.
+
+The individual helpers below support direct composition of existing child exports. They also describe the Model and Message flow used by a binding.
+
 ## The Child Submodel {#child-submodel}
 
 A child Submodel does not know which parent embeds it. This Settings Submodel owns its state and handles its Messages without importing the root Model or Message.

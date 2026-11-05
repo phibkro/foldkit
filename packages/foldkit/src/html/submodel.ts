@@ -24,8 +24,9 @@ import {
 // module instances (e.g. pnpm hoisting variations) stay structurally
 // compatible.
 const SUBMODEL_MESSAGE_BRAND = '__submodelMessage'
+const SUBMODEL_INPUTS_BRAND = '__submodelViewInputs'
 
-/** A view function branded with the Message type it dispatches. Build
+/** A view function branded with its Message and ViewInputs types. Build
  *  one with {@link defineView}:
  *
  *  ```ts
@@ -55,15 +56,16 @@ const SUBMODEL_MESSAGE_BRAND = '__submodelMessage'
  *  Required at the `h.submodel` call site so unbranded plain functions
  *  fail to type-check there. */
 export type SubmodelView<Model, Message, ViewInputs = void> = ([
-  ViewInputs,
+  NoInfer<ViewInputs>,
 ] extends [void]
   ? (model: Model, h: HtmlBuilder<Message>) => VNode | null
   : (
       model: Model,
-      viewInputs: ViewInputs,
+      viewInputs: NoInfer<ViewInputs>,
       h: HtmlBuilder<Message>,
     ) => VNode | null) & {
   readonly [SUBMODEL_MESSAGE_BRAND]: Message
+  readonly [SUBMODEL_INPUTS_BRAND]?: ViewInputs
 }
 
 /** Defines the view function of a Submodel, a child component embedded

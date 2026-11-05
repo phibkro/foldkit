@@ -437,41 +437,53 @@ export const lazy = <
     })
   }
 
+  const enter = (input: Input, instance: number, previous?: Model): Return => {
+    if (previous) {
+      assertBuild(previous)
+    }
+    return start(
+      input,
+      instance,
+      0,
+      previous?._tag === 'Ready' ? Option.some(previous.model) : Option.none(),
+    )
+  }
+
+  const resume = (state: Model): Update.Return<Model, Message, Resources> => {
+    assertBuild(state)
+    return state._tag === 'Loading'
+      ? {
+          model: state,
+          commands: [
+            Load({
+              instance: state.instance,
+              attempt: state.attempt,
+              buildId: state.buildId,
+            }),
+          ],
+        }
+      : { model: state }
+  }
+
+  const prepare = (state: Model) =>
+    Effect.sync(() => assertBuild(state)).pipe(
+      Effect.andThen(
+        state._tag === 'Ready' ? Effect.promise(prepared.load) : Effect.void,
+      ),
+    )
+
   return {
     id: child.id,
     Model,
     Message,
     Prepare: Load,
-    enter: (input: Input, instance: number, previous?: Model): Return => {
-      if (previous) {
-        assertBuild(previous)
-      }
-      return start(
-        input,
-        instance,
-        0,
-        previous?._tag === 'Ready'
-          ? Option.some(previous.model)
-          : Option.none(),
-      )
-    },
+    init: enter,
+    enter,
     update,
-    /** Reissues interrupted preparation after restoration without changing state. */
-    resume: (state: Model): Return => {
-      assertBuild(state)
-      return state._tag === 'Loading'
-        ? {
-            model: state,
-            commands: [
-              Load({
-                instance: state.instance,
-                attempt: state.attempt,
-                buildId: state.buildId,
-              }),
-            ],
-          }
-        : { model: state }
-    },
+    /** Reissues interrupted preparation without changing the host Model. */
+    resume,
+    /** Supplies preparation Commands to the runtime restoration hook. */
+    resumeModel: (state: Model) => resume(state).commands ?? [],
     /** Reads admitted child data and extension metadata without exposing mutable code storage. */
     inspect: (state: Model) => {
       assertBuild(state)
@@ -494,13 +506,10 @@ export const lazy = <
         catch: cause =>
           new LoadError({ moduleId: child.id, reason: String(cause) }),
       }),
-    /** Prepare restored active/parked state before synchronous replay, SSR or hydration. */
-    prepare: (state: Model) =>
-      Effect.sync(() => assertBuild(state)).pipe(
-        Effect.andThen(
-          state._tag === 'Ready' ? Effect.promise(prepared.load) : Effect.void,
-        ),
-      ),
+    /** Loads admitted code before synchronous rendering or replay. */
+    prepare,
+    /** Supplies the runtime preparation barrier. */
+    prepareModel: prepare,
     subscriptions: (state: Model) => {
       assertBuild(state)
       return state._tag === 'Ready'
