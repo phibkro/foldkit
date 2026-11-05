@@ -1,5 +1,6 @@
 import { Effect, Layer, Option, Predicate, Schema } from 'effect'
 
+import type { Command } from '../command/index.js'
 import { Document, Html, type HtmlBuilder } from '../html/index.js'
 import type { ManagedResources } from '../managedResource/index.js'
 import type { Ports } from '../port/index.js'
@@ -39,6 +40,18 @@ type BaseElementConfig<
     Message,
     Resources | ManagedResourceServices
   >
+  /** Reconstructs interrupted Commands after successful Model restoration. Fresh init retains its own Commands. */
+  resumeModel?: (
+    model: Model,
+  ) => ReadonlyArray<
+    Command<Message, never, Resources | ManagedResourceServices>
+  >
+  /** Prepares code referenced by an initial or restored Model before render, replay, or subscriptions. */
+  prepareModel?: (model: Model) => Effect.Effect<void, never, Resources>
+  /** Selects the active prepared Submodel's subscriptions. Entries retain their identity while active. */
+  dynamicSubscriptions?: (
+    model: Model,
+  ) => Subscriptions<Model, Message, Resources | ManagedResourceServices>
   container: HTMLElement | null
   ports?: P
   crash?: ElementCrashConfig<Model, Message>
@@ -214,6 +227,11 @@ export function makeElement<
     manageDocument: false,
     ports: config.ports,
     ...(config.subscriptions && { subscriptions: config.subscriptions }),
+    ...(config.dynamicSubscriptions && {
+      dynamicSubscriptions: config.dynamicSubscriptions,
+    }),
+    ...(config.prepareModel && { prepareModel: config.prepareModel }),
+    ...(config.resumeModel && { resumeModel: config.resumeModel }),
     container,
     ...(Predicate.isNotUndefined(crash) && { crash }),
     ...(Predicate.isNotUndefined(config.slow) && {

@@ -4,6 +4,9 @@ import type { TypeDocItem, TypeDocSignature, TypeDocType } from './typedoc.ts'
 
 const indent = (depth: number): string => '  '.repeat(depth)
 
+const formatName = (name: string, isOptional: boolean): string =>
+  isOptional ? `${name}?` : name
+
 const whenType = Match.discriminator('type')
 
 /** Map from a reflection fingerprint to the qualified type name to render in
@@ -44,7 +47,7 @@ const objectLiteralToString = (
           children,
           Array.map(
             child =>
-              `${indent(depth + 1)}${child.name}: ${typeToString(child.type, depth + 1, namedSchemas)}`,
+              `${indent(depth + 1)}${formatName(child.name, child.flags.isOptional)}: ${typeToString(child.type, depth + 1, namedSchemas)}`,
           ),
           Array.join('\n'),
           properties => `{\n${properties}\n${indent(depth)}}`,
@@ -62,10 +65,10 @@ const callSignatureToString = (
     onSome: params =>
       pipe(
         params,
-        Array.map(parameter => {
-          const optionalSuffix = parameter.flags.isOptional ? '?' : ''
-          return `${parameter.name}${optionalSuffix}: ${typeToString(parameter.type, depth, namedSchemas)}`
-        }),
+        Array.map(
+          parameter =>
+            `${formatName(parameter.name, parameter.flags.isOptional)}: ${typeToString(parameter.type, depth, namedSchemas)}`,
+        ),
         Array.join(', '),
       ),
   })
@@ -171,6 +174,11 @@ const formatType = (
           )
         : `[${Array.join(formatted, ', ')}]`
     }),
+    whenType(
+      'namedTupleMember',
+      ({ name, isOptional, element }) =>
+        `${formatName(name, isOptional)}: ${formatType(element, depth, namedSchemas)}`,
+    ),
     whenType('union', ({ types }) =>
       pipe(
         types,
@@ -259,7 +267,7 @@ export const typeDefFromChildren = (
           items,
           Array.map(
             child =>
-              `  ${child.name}: ${typeToString(child.type, 1, namedSchemas)}`,
+              `  ${formatName(child.name, child.flags.isOptional)}: ${typeToString(child.type, 1, namedSchemas)}`,
           ),
           Array.join('\n'),
           properties => `{\n${properties}\n}`,
