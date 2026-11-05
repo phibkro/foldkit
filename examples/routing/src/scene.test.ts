@@ -1,8 +1,9 @@
-import { Array, Option, String } from 'effect'
+import { Array, Effect, Option, String } from 'effect'
 import { expect, given, role, scene, text } from 'foldkit/scene'
+import { fromString } from 'foldkit/url'
 import { describe, test } from 'vitest'
 
-import { AppRoute, Model, update, view } from './main'
+import { AppRoute, Model, init, update, view } from './main'
 import { People } from './page'
 
 const peoplePageWith = (searchInput: string) =>
@@ -18,11 +19,15 @@ const peoplePageWith = (searchInput: string) =>
 const initialPeoplePage = peoplePageWith('')
 
 const home = Model.make({
+  maybeNestedPage: Option.none(),
+  nestedInstance: 0,
   route: AppRoute.Home(),
   peoplePage: initialPeoplePage,
 })
 const people = (searchInput: string) =>
   Model.make({
+    maybeNestedPage: Option.none(),
+    nestedInstance: 0,
     route: AppRoute.People({
       searchText: Option.liftPredicate(String.isNonEmpty)(searchInput),
     }),
@@ -30,24 +35,28 @@ const people = (searchInput: string) =>
   })
 const person = (personId: number) =>
   Model.make({
+    maybeNestedPage: Option.none(),
+    nestedInstance: 0,
     route: AppRoute.Person({ personId }),
     peoplePage: initialPeoplePage,
   })
-const nested = Model.make({
-  route: AppRoute.Nested(),
-  peoplePage: initialPeoplePage,
-})
 const filesIndex = Model.make({
+  maybeNestedPage: Option.none(),
+  nestedInstance: 0,
   route: AppRoute.FilesIndex(),
   peoplePage: initialPeoplePage,
 })
 const files = (path: Array.NonEmptyReadonlyArray<string>) =>
   Model.make({
+    maybeNestedPage: Option.none(),
+    nestedInstance: 0,
     route: AppRoute.Files({ path }),
     peoplePage: initialPeoplePage,
   })
 const notFound = (path: string) =>
   Model.make({
+    maybeNestedPage: Option.none(),
+    nestedInstance: 0,
     route: AppRoute.NotFound({ path }),
     peoplePage: initialPeoplePage,
   })
@@ -72,7 +81,19 @@ describe('view', () => {
     )
   })
 
-  test('the Nested route renders its deep-route message', () => {
+  test('the Nested route renders its deep-route message after loading', async () => {
+    const url = Option.getOrThrow(
+      fromString('https://example.com/nested/route/is/very/nested'),
+    )
+    const nestedInit = init(url)
+    const loading = Option.getOrThrow(
+      Array.findFirst(
+        nestedInit.commands ?? [],
+        command => command.name === 'PrepareNested',
+      ),
+    )
+    const completed = await Effect.runPromise(loading.effect)
+    const nested = update(nestedInit.model, completed).model
     scene(
       { update, view },
       given(nested),

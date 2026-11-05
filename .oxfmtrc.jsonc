@@ -19,6 +19,7 @@
   },
   "sortPackageJson": false,
   "ignorePatterns": [
+    "examples/routing/src/submodels.generated.ts",
     "node_modules",
     "dist",
     "dist-server",

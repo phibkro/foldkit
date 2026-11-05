@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "submodels:generate": "node scripts/generate-submodels.mjs"
   },
   "dependencies": {
     "@effect/platform-browser": "4.1.0",

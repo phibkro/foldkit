@@ -1,8 +1,9 @@
-import { Array, Option, String } from 'effect'
+import { Array, Effect, Option, String } from 'effect'
 import { Command, given, message, model, story } from 'foldkit/story'
 import { fromString } from 'foldkit/url'
 import { describe, expect, test } from 'vitest'
 
+import { NestedPage } from './lazyPage'
 import { AppRoute, Message, Model, NavigateInternal, update } from './main'
 import { People } from './page'
 import {
@@ -25,12 +26,16 @@ const peoplePageWith = (searchInput: string) =>
 const initialPeoplePage = peoplePageWith('')
 
 const home = Model.make({
+  maybeNestedPage: Option.none(),
+  nestedInstance: 0,
   route: AppRoute.Home(),
   peoplePage: initialPeoplePage,
 })
 
 const onPeople = (searchInput: string) =>
   Model.make({
+    maybeNestedPage: Option.none(),
+    nestedInstance: 0,
     route: AppRoute.People({
       searchText: Option.liftPredicate(String.isNonEmpty)(searchInput),
     }),
@@ -172,7 +177,9 @@ describe('update', () => {
       )
     })
 
-    test('the deep nested path resolves to Nested', () => {
+    test('the deep nested path loads the Nested page', async () => {
+      await Effect.runPromise(NestedPage.prefetch())
+      const loading = NestedPage.enter({}, 1).model
       story(
         update,
         given(home),
@@ -181,8 +188,17 @@ describe('update', () => {
             url: urlOrThrow('http://localhost/nested/route/is/very/nested'),
           }),
         ),
+        Command.resolve(
+          NestedPage.Prepare,
+          NestedPage.Message.CompletedPrepare({
+            instance: loading.instance,
+            attempt: loading.attempt,
+            buildId: loading.buildId,
+          }),
+        ),
         model(model => {
           expect(model.route._tag).toBe('Nested')
+          expect(Option.getOrThrow(model.maybeNestedPage)._tag).toBe('Ready')
         }),
       )
     })
